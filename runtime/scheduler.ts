@@ -14,6 +14,11 @@ export async function executeJob(
         throw new Error("No workers available. Pool exhausted.");
     }
 
+    // Safety check: ensure worker is not in crashed state
+    if (worker.worker_state === "crashed") {
+        throw new Error("Assigned worker is in crashed state. Please retry.");
+    }
+
     const functionPath = registry[functionName];
     if (!functionPath) {
         throw new Error(`Function '${functionName}' not registered`);
@@ -50,9 +55,26 @@ export async function executeJob(
             messageReceived = true;
             worker.worker.off("message", messageHandler);
             worker.worker.off("error", errorHandler);
+            worker.worker.off("exit", exitHandler);
             cleanup();
 
             reject(new Error(`Worker crashed: ${err.message}`));
+        };
+
+        const exitHandler = (code: number | null, signal: string | null) => {
+            if (messageReceived) return;
+
+            messageReceived = true;
+            worker.worker.off("message", messageHandler);
+            worker.worker.off("error", errorHandler);
+            worker.worker.off("exit", exitHandler);
+            cleanup();
+
+            reject(
+                new Error(
+                    `Worker process exited unexpectedly (code: ${code}, signal: ${signal})`
+                )
+            );
         };
 
         timeoutId = setTimeout(() => {
@@ -61,6 +83,7 @@ export async function executeJob(
             messageReceived = true;
             worker.worker.off("message", messageHandler);
             worker.worker.off("error", errorHandler);
+            worker.worker.off("exit", exitHandler);
             cleanup();
 
             reject(
@@ -72,12 +95,14 @@ export async function executeJob(
 
         worker.worker.on("message", messageHandler);
         worker.worker.on("error", errorHandler);
+        worker.worker.on("exit", exitHandler);
 
         try {
             worker.worker.send({ functionPath, event });
         } catch (err: any) {
             worker.worker.off("message", messageHandler);
             worker.worker.off("error", errorHandler);
+            worker.worker.off("exit", exitHandler);
             cleanup();
             reject(new Error(`Failed to send message to worker: ${err.message}`));
         }

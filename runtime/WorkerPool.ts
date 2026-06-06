@@ -35,13 +35,21 @@ export class WorkerPool {
         const worker = fork(join(__dirname, "worker.ts"));
 
         const errorHandler = (err: Error) => {
-            console.error(`Worker error:`, err);
+            console.error(`Worker ${index} crashed with error:`, err.message);
+            const workerInstance = this.workers.find((w) => w.worker === worker);
+            if (workerInstance) {
+                workerInstance.worker_state = "crashed";
+            }
             this.removeWorker(worker);
         };
 
         const exitHandler = (code: number | null, signal: string | null) => {
-            if (code !== 0) {
-                console.error(`Worker exited with code ${code}, signal ${signal}`);
+            if (code !== 0 || signal !== null) {
+                console.error(`Worker ${index} crashed: exit code ${code}, signal ${signal}`);
+                const workerInstance = this.workers.find((w) => w.worker === worker);
+                if (workerInstance) {
+                    workerInstance.worker_state = "crashed";
+                }
                 this.removeWorker(worker);
             }
         };
@@ -73,7 +81,16 @@ export class WorkerPool {
 
         const index = this.workers.findIndex((w) => w.worker === worker);
         if (index !== -1) {
+            const crashed = this.workers[index]!;
+            console.log(`Removing ${crashed.id} (state: ${crashed.worker_state}) from pool`);
             this.workers.splice(index, 1);
+            
+            // Kill the process if still running
+            if (!worker.killed) {
+                worker.kill();
+            }
+            
+            // Create replacement worker
             this.createWorker(this.workers.length);
         }
     }
