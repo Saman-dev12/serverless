@@ -74,7 +74,7 @@ export async function executeJob(
         worker.worker.on("error", errorHandler);
 
         try {
-            worker.worker.postMessage({ functionPath, event });
+            worker.worker.send({ functionPath, event });
         } catch (err: any) {
             worker.worker.off("message", messageHandler);
             worker.worker.off("error", errorHandler);

@@ -1,15 +1,10 @@
-import { parentPort } from "worker_threads";
-
-if (!parentPort) {
-    throw new Error("parentPort not available");
-}
-
 interface WorkerJob {
     functionPath: string;
     event: any;
 }
 
-parentPort.on("message", async (job: WorkerJob) => {
+// Listen for messages from parent process
+process.on("message", async (job: WorkerJob) => {
     const { functionPath, event } = job;
     try {
         if (!functionPath) {
@@ -24,25 +19,26 @@ parentPort.on("message", async (job: WorkerJob) => {
 
         const result = await fn.handler(event);
 
-        parentPort!.postMessage({
+        // Send result back to parent
+        process.send!({
             success: true,
             result,
         });
     } catch (err: any) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        parentPort!.postMessage({
+        process.send!({
             success: false,
             error: errorMessage,
         });
     }
 });
 
-parentPort.on("error", (err) => {
+process.on("error", (err) => {
     console.error("Worker error:", err);
 });
 
-parentPort.on("exit", (code) => {
+process.on("exit", (code) => {
     if (code !== 0) {
-        console.error(`Worker stopped with exit code ${code}`);
+        console.error(`Worker process exited with code ${code}`);
     }
 });

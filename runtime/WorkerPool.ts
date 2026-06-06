@@ -1,4 +1,4 @@
-import { Worker } from "worker_threads";
+import { fork, ChildProcess } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -11,14 +11,14 @@ export type WorkerStates =
     | "crashed";
 
 export interface WorkerInstance {
-    worker: Worker;
+    worker: ChildProcess;
     worker_state: WorkerStates;
     id : string;
 }
 
 export class WorkerPool {
     private workers: WorkerInstance[] = [];
-    private cleanupHandlers = new Map<Worker, () => void>();
+    private cleanupHandlers = new Map<ChildProcess, () => void>();
     private onWorkerAvailable: (() => void) | null = null;
 
     constructor(size: number = 2) {
@@ -32,16 +32,16 @@ export class WorkerPool {
     }
 
     private createWorker(index:number): void {
-        const worker = new Worker(join(__dirname, "worker.ts"));
+        const worker = fork(join(__dirname, "worker.ts"));
 
         const errorHandler = (err: Error) => {
             console.error(`Worker error:`, err);
             this.removeWorker(worker);
         };
 
-        const exitHandler = (code: number) => {
+        const exitHandler = (code: number | null, signal: string | null) => {
             if (code !== 0) {
-                console.error(`Worker exited with code ${code}`);
+                console.error(`Worker exited with code ${code}, signal ${signal}`);
                 this.removeWorker(worker);
             }
         };
@@ -66,7 +66,7 @@ export class WorkerPool {
         }
     }
 
-    private removeWorker(worker: Worker): void {
+    private removeWorker(worker: ChildProcess): void {
         const cleanup = this.cleanupHandlers.get(worker);
         if (cleanup) cleanup();
         this.cleanupHandlers.delete(worker);
@@ -84,7 +84,7 @@ export class WorkerPool {
 
     async destroy(): Promise<void> {
         for (const { worker } of this.workers) {
-            await worker.terminate();
+            worker.kill();
             const cleanup = this.cleanupHandlers.get(worker);
             if (cleanup) cleanup();
         }
